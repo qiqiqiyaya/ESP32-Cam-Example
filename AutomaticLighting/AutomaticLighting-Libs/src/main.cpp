@@ -21,6 +21,9 @@ bool isSendHttp = false;
 String digitalReadToString(uint8_t pin);
 void handleRootPath(void);
 void httpSend(void);
+void infraredInterrupt();
+
+bool mark = 0;
 
 void setup()
 {
@@ -46,31 +49,65 @@ void setup()
   digitalWrite(LED_OUTPUT, HIGH);
 
   // 人体红外感应器
-  pinMode(INFRARED_INTPUT, INPUT);
+  // 测试
+  // pinMode(INFRARED_INTPUT, INPUT);
+  pinMode(INFRARED_INTPUT, OUTPUT);
   digitalWrite(INFRARED_INTPUT, LOW);
 
   server.on("/", handleRootPath);
+  server.on("", handleRootPath);
   server.onNotFound(handleRootPath);
   server.begin();
 
   Serial.println("WebServer start");
   Serial.print(WiFi.localIP());
+
+  attachInterrupt(digitalPinToInterrupt(INFRARED_INTPUT), infraredInterrupt, CHANGE); // 使能中断
+}
+
+void infraredInterrupt()
+{
+  InfraredState = digitalRead(INFRARED_INTPUT);
+  digitalWrite(LED_OUTPUT, InfraredState);
+
+  int st = digitalRead(PILOT_LAMP);
+  if (st == 1)
+  {
+    digitalWrite(PILOT_LAMP, LOW);
+  }
+  else
+  {
+    digitalWrite(PILOT_LAMP, HIGH);
+  }
 }
 
 void loop()
 {
   server.handleClient();
   // 红外
+  // InfraredState = digitalRead(INFRARED_INTPUT);
+  // digitalWrite(LED_OUTPUT, InfraredState);
+  // if (InfraredState == 1 && !isSendHttp)
+  // {
+  //   // httpSend();
+  //   isSendHttp = true;
+  // }
+  // else
+  // {
+  //   isSendHttp = false;
+  // }
+  // 每20秒触发一次
+  delay(1000 * 20);
+  String test = digitalReadToString(INFRARED_INTPUT);
   InfraredState = digitalRead(INFRARED_INTPUT);
-  digitalWrite(LED_OUTPUT, InfraredState);
-  if (InfraredState == 1 && !isSendHttp)
+  Serial.println("InfraredState " + test);
+  if (InfraredState == 1)
   {
-    // httpSend();
-    isSendHttp = true;
+    digitalWrite(INFRARED_INTPUT, LOW);
   }
   else
   {
-    isSendHttp = false;
+    digitalWrite(INFRARED_INTPUT, HIGH);
   }
 }
 
@@ -99,51 +136,4 @@ void handleRootPath(void)
   message += "LED灯 state: " + IO15;
 
   server.send(200, "text/html; charset=utf-8", message);
-}
-
-void httpSend()
-{
-  Serial.println("Start http send");
-  HTTPClient client;
-  client.begin(httpUrl);
-  // 超时时间10s
-  client.setTimeout(10);
-
-  time_t now;
-  time(&now);
-
-  cJSON *pRoot = cJSON_CreateObject();
-  cJSON_AddNumberToObject(pRoot, "Tsp", now);
-  cJSON_AddStringToObject(pRoot, "Pst", "门口");
-  cJSON_AddStringToObject(pRoot, "Dn", "Esp32-cam");
-  cJSON_AddNumberToObject(pRoot, "Te", InfraredState);
-  char *sendData = cJSON_Print(pRoot);
-  int httpCode = client.POST(sendData);
-
-  while (client.connected())
-  {
-  }
-  if (httpCode > 0)
-  {
-    Serial.println("send http post httpCode: " + String(httpCode));
-    if (httpCode == HTTP_CODE_OK)
-    {
-      String payload = client.getString(); // 读取服务器返回的响应正文数据
-      // 如果正文数据很多该方法会占用很大的内存
-      Serial.println(payload);
-    }
-  }
-  else
-  {
-    Serial.printf("[HTTP] POST... failed, error: %s\n", client.errorToString(httpCode).c_str());
-  }
-
-  client.end(); // 结束当前连接
-  // cJSON_free((void *)sendData); // 释放cJSON_Print ()分配出来的内存空间
-  cJSON_Delete(pRoot); // 释放cJSON_CreateObject ()分配出来的内存空间
-  // delete[] sendData;
-  // delete httpCode; // 释放内存
-  // delete client;
-
-  Serial.println("send http post end");
 }
